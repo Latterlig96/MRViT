@@ -1,0 +1,57 @@
+{
+    "model": {
+        "use_pretrained": true,
+        "num_classes": 0,
+        "input_channels": 3,
+        "output_dim": 1
+    },
+    "train": {
+        "train": true,
+        "root_dir": "./data/",
+        "plane": "axial",
+        "task": "abnormal",
+        "model_name": "VisionTransformer",
+        "save_model_filename": "best_loss",
+        "loss": {
+            "name": "BCEWithLogitsLoss",
+            "params": null
+        },
+        "optimizer": {
+            "name": "Adam",
+            "params": {
+                "lr": 1e-5
+            }
+        },
+        "scheduler": {
+            "name": "CosineAnnealingWarmRestarts",
+            "params": {
+                "T_0": 3,
+                "eta_min": 1e-6
+            }
+        },
+        "batch_size": 1,
+        "epochs": 10,
+        "seed": 47,
+        "monitor_metric": "val_auc",
+        "patience": 2,
+        "verbose": true,
+        "gpus": 1,
+        "accumulate_grad_batches": 1,
+        "fast_dev_run": false,
+        "num_sanity_val_steps": 1,
+        "resume_from_checkpoint": null
+    },
+    "valid": {
+        "train": false,
+        "root_dir": "./data/",
+        "plane": "axial",
+        "task": "abnormal",
+        "batch_size": 1
+    },
+    "augmentation": {
+        "image_size": [224, 224, 10],
+        "rotate_angle": 25,
+        "image_mean": [0.485, 0.456, 0.406],
+        "image_std": [0.229, 0.224, 0.225]
+    }
+}
