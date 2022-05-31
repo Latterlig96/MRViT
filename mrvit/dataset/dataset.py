@@ -38,17 +38,7 @@ class BaseDataset(Dataset):
         self._transform = transform
         self._images = glob(str(root_dir/'train'/plane/"*.npy")) if train else glob(str(root_dir/'valid'/plane/"*.npy"))
         self._labels = self._df['label'].values
-        self._weight = self._df['label'].sum()
-
-    def get_data_weight(self) -> float:
-        """
-            Getter for labels weight to use
-
-            Returns:
-            :weight: float - labels weight
-
-        """
-        return self._weight
+        self._weight = self._df['label'].sum() / len(self._labels)
 
     def __len__(self) -> int:
         return len(self._images)
@@ -58,4 +48,4 @@ class BaseDataset(Dataset):
         image: torch.Tensor = torch.from_numpy(image).repeat(3, 1, 1, 1).permute(0, 2, 3, 1)
         label: int = self._labels[idx]
         image = self._transform(image).permute(3, 0, 1, 2)
-        return image, label.astype('float')
+        return image, label.astype('float'), self._weight

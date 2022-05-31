@@ -44,7 +44,8 @@ class TrainHandler(LightningModule):
 
     """
 
-    def __init__(self, config: Config):
+    def __init__(self,
+                 config: Config):
         super().__init__()
         self._config = config
         self._build_model()
@@ -60,7 +61,7 @@ class TrainHandler(LightningModule):
         if self._config.train.loss.name not in self._SUPPORTED_LOSS:
             raise ValueError(f"{self._config.train.loss.name} not supported, check your configuration")
         criterion: typing.Callable = self._SUPPORTED_LOSS.get(self._config.train.loss.name)
-        self._criterion = criterion() if self._config.train.loss.params is None else criterion(**self._config.train.loss.params)
+        self._criterion = criterion if self._config.train.loss.params is None else criterion(**self._config.train.loss.params)
     
     def _build_optimizer(self) -> typing.TypeVar('TorchOptimizer'):
         if self._config.train.optimizer.name not in self._SUPPORTED_OPTIMIZERS:
@@ -77,24 +78,24 @@ class TrainHandler(LightningModule):
             self._scheduler = self._SUPPORTED_SCHEDULERS.get(self._config.train.scheduler.name)(self._optimizer, **self._config.train.scheduler.params)
         else:    
             self._scheduler = self._SUPPORTED_SCHEDULERS.get(self._config.train.scheduler.name)(self._optimizer)
-    
+            
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out = self._model(x)
         return out
 
-    def training_step(self, batch: typing.Tuple[torch.Tensor, int], batch_idx: int):
+    def training_step(self, batch: typing.Tuple[torch.Tensor, int, float], batch_idx: int):
         loss, pred, labels = self._share_step(batch, 'train')
         return {'loss': loss, 'pred': pred, 'labels': labels}
 
-    def validation_step(self, batch: typing.Tuple[torch.Tensor, int], batch_idx: int):
+    def validation_step(self, batch: typing.Tuple[torch.Tensor, int, float], batch_idx: int):
         loss, pred, labels = self._share_step(batch, 'val')
         return {'loss': loss, 'pred': pred, 'labels': labels}
 
     def _share_step(self, batch: typing.Tuple[torch.Tensor, int], mode: str):
-        image, label = batch
+        image, label, weight = batch
         logit = self.forward(image).squeeze(0)
-        loss = self._criterion(logit.sigmoid(), label)
-        return loss, logit, label
+        loss = self._criterion(logit, label) if not callable(self._criterion) else self._criterion(pos_weight=weight)(logit, label)
+        return loss, logit.sigmoid(), label.int()
 
     def training_epoch_end(self, outputs):
         self._share_epoch_end(outputs, 'train')
@@ -111,8 +112,12 @@ class TrainHandler(LightningModule):
             labels.append(label)
         preds = torch.cat(preds)
         labels = torch.cat(labels)
-        metric = torchmetrics.functional.auc(preds, labels)
-        self.log(f'{mode}_auc', metric)
+        auc_metric = torchmetrics.functional.auroc(preds, labels)
+        accuracy_metric = torchmetrics.functional.precision(preds, labels)
+        recall_metric = torchmetrics.functional.recall(preds, labels)
+        self.log(f'{mode}_auc', auc_metric, prog_bar=True)
+        self.log(f'{mode}_accuracy', accuracy_metric, prog_bar=True)
+        self.log(f'{mode}_recall', recall_metric, prog_bar=True)
     
     def configure_optimizers(self) -> typing.Dict[str, typing.TypeVar('torchObject')]:
         self._build_optimizer()
@@ -153,7 +158,8 @@ class TrainTriggerer:
         datamodule = DataModule(self._config)
         early_stopping = EarlyStopping(monitor=self._config.train.monitor_metric,
                                        verbose=self._config.train.verbose,
-                                       patience=self._config.train.patience)
+                                       patience=self._config.train.patience,
+                                       mode="max")
         lr_monitor = LearningRateMonitor()
         loss_checkpoint = ModelCheckpoint(
             filename=self._config.train.save_model_filename,
@@ -168,6 +174,10 @@ class TrainTriggerer:
         trainer = pytorch_lightning.Trainer(
             accelerator = 'gpu' if self._config.train.gpus else 'cpu',
             devices=self._config.train.gpus,
+            accumulate_grad_batches=self._config.train.accumulate_grad_batches,
+            fast_dev_run=self._config.train.fast_dev_run,
+            resume_from_checkpoint=self._config.train.resume_from_checkpoint,
+            num_sanity_val_steps=self._config.train.num_sanity_val_steps,
             logger=logger,
             max_epochs=self._config.train.epochs,
             callbacks=[lr_monitor, loss_checkpoint, early_stopping]

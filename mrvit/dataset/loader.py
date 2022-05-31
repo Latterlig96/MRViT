@@ -39,7 +39,7 @@ class DataModule(LightningDataModule):
                                         transform=Augmentation(self._config).get_by_mode("validation"))
     
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(self.train_data, batch_size=self._config.train.batch_size, num_workers=self._config.train.num_workers)
+        return DataLoader(self.train_data, batch_size=self._config.train.batch_size, shuffle=True, num_workers=self._config.train.num_workers)
     
     def val_dataloader(self) -> DataLoader: 
         return DataLoader(self.val_data, batch_size=self._config.valid.batch_size, num_workers=self._config.valid.num_workers)
